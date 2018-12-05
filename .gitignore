@@ -1,0 +1,10 @@
+__pycache__/
+venv/
+google/
+annotations_pb2.py
+xudrpc_pb2.py
+xudrpc_pb2_grpc.py
+tls.cert
+tls2.cert
+test.py
+test2.py

@@ -1,0 +1,3 @@
+[submodule "xud"]
+	path = xud
+	url = https://github.com/ExchangeUnion/xud.git
