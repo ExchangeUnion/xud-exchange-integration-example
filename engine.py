@@ -39,7 +39,7 @@ class Match:
 class Order:
     id = 0
 
-    def __init__(self, user, side, quantity, price=None, extra=None):
+    def __init__(self, user, side, quantity, price=None, extra={}):
         Order.id = Order.id + 1
         self.id = Order.id
         self.user = user
@@ -53,7 +53,7 @@ class Order:
         self.extra = extra
 
     def __repr__(self):
-        return "Order{id=%s, user=%s, side=%s, quantity=%s/%s, price=%s, status=%s, reject_reason=%s, matches=%s}" % (self.id, self.user.name, self.side, self.quantity, self.original_quantity, self.price, self.status, self.reject_reason, self.matches)
+        return "Order{id=%s, user=%s, side=%s, quantity=%s/%s, price=%s, status=%s, reject_reason=%s, matches=%s, extra=%s}" % (self.id, self.user.name, self.side, self.quantity, self.original_quantity, self.price, self.status, self.reject_reason, self.matches, self.extra)
 
 
 alice = User('alice')
@@ -263,7 +263,7 @@ def cancel_order(cmd):
 
 def cancel_xud_order(order_id):
     global orders, buy, sell
-    result = list(filter(lambda x: x.extra["xud_order_id"] == order_id, orders))
+    result = list(filter(lambda x: "xud_order_id" in x.extra and x.extra["xud_order_id"] == order_id, orders))
     if len(result) == 0:
         print("Not found!")
         return
@@ -332,9 +332,13 @@ def xud_place_order(order_id, side, quantity, price):
 
 def xud_execute_swap(order_id, peer_pub_key, quantity):
     print('[XUD]ExecuteSwap: order_id=%s, peer_pub_key=%s, quantity=%s' % (order_id, peer_pub_key, quantity))
-    global stub
+    global stub, Q, P
+    if stub is None:
+        print("xud is not connected!")
+        return
     request = xudrpc_pb2.ExecuteSwapRequest(pair_id='%s/%s' % (Q, P), order_id=order_id, peer_pub_key=peer_pub_key, quantity=quantity)
     response = stub.ExecuteSwap(request)
+    print("--------------SWAP--------------")
     print(response)
 
 
@@ -375,21 +379,24 @@ def subscribe_swaps(stub):
 
 
 def run_subscribe_added_orders(host, port):
-    with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
-        stub = xudrpc_pb2_grpc.XudStub(channel)
-        subscribe_added_orders(stub)
+    # with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
+    global channel
+    stub = xudrpc_pb2_grpc.XudStub(channel)
+    subscribe_added_orders(stub)
 
 
 def run_subscribe_removed_orders(host, port):
-    with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
-        stub = xudrpc_pb2_grpc.XudStub(channel)
-        subscribe_removed_orders(stub)
+    # with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
+    global channel
+    stub = xudrpc_pb2_grpc.XudStub(channel)
+    subscribe_removed_orders(stub)
 
 
 def run_subscribe_swaps(host, port):
-    with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
-        stub = xudrpc_pb2_grpc.XudStub(channel)
-        subscribe_swaps(stub)
+    # with grpc.secure_channel('%s:%s' % (host, port), load_credentials()) as channel:
+    global channel
+    stub = xudrpc_pb2_grpc.XudStub(channel)
+    subscribe_swaps(stub)
 
 
 def handle_connect(cmd):
@@ -399,11 +406,12 @@ def handle_connect(cmd):
     host = parts[1] if len(parts) > 1 else 'localhost'
     port = parts[2] if len(parts) > 2 else 8886
 
+    channel = grpc.secure_channel('%s:%s' % (host, port), load_credentials())
+
     _thread.start_new_thread(run_subscribe_added_orders, (host, port))
     _thread.start_new_thread(run_subscribe_removed_orders, (host, port))
     _thread.start_new_thread(run_subscribe_swaps, (host, port))
 
-    channel = grpc.secure_channel('%s:%s' % (host, port), load_credentials())
     stub = xudrpc_pb2_grpc.XudStub(channel)
     xud_get_info()
     # xud_list_pairs()
