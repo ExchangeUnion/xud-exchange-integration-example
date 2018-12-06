@@ -16,6 +16,7 @@ users = []
 P = 'BTC'
 Q = 'LTC'
 stub = None
+channel = None
 
 
 class User:
@@ -104,21 +105,24 @@ def accept_price(order, price):
 
 
 def do_place(order):
+    global buy, sell
     if order.side == 'buy':
         buy.append(order)
-        sorted(buy, key=functools.cmp_to_key(compare_buy))
+        buy = list(sorted(buy, key=functools.cmp_to_key(compare_buy)))
     elif order.side == 'sell':
         sell.append(order)
-        sorted(sell, key=functools.cmp_to_key(compare_sell))
-    xud_place_order(order.id, order.side, order.quantity, order.price)
+        sell = list(sorted(sell, key=functools.cmp_to_key(compare_sell)))
+    if order.user is not xud:
+        xud_place_order(order.id, order.side, order.quantity, order.price)
 
 
 def do_settlement(order):
-
-
-
-
-    pass
+    for match in order.matches:
+        peer = match.order
+        if peer.user == xud:
+            xud_execute_swap(peer.extra["xud_order_id"], peer.extra["peer_pub_key"], match.quantity)
+        else:
+            print("Need to do settlement locally!")
 
 
 def handle_market_order(order):
@@ -225,6 +229,7 @@ def place_xud_order(quantity, price, order_id, side, peer_pub_key, created_at):
         "peer_pub_key": peer_pub_key,
         "created_at": created_at,
     })
+    orders.append(order)
     if price is None:
         handle_market_order(order)
     else:
@@ -257,13 +262,25 @@ def cancel_order(cmd):
 
 
 def cancel_xud_order(order_id):
-    pass
-
-
+    global orders, buy, sell
+    result = list(filter(lambda x: x.extra["xud_order_id"] == order_id, orders))
+    if len(result) == 0:
+        print("Not found!")
+        return
+    target = result[0]
+    if target.status == 'OPEN':
+        target.status = 'CANCELLED'
+        if target.side == 'buy':
+            buy.remove(target)
+        elif target.side == 'sell':
+            sell.remove(target)
+    else:
+        print('Too late to cancel')
+        return
 
 
 def print_order_entry(order):
-    print('%s %s' % (order.price, order.quantity))
+    print('%-10s%s' % (order.price, order.quantity))
 
 
 def print_orderbook():
@@ -302,6 +319,7 @@ def xud_get_orders():
 
 
 def xud_place_order(order_id, side, quantity, price):
+    print('[XUD]PlaceOrder: order_id=%s, side=%s, quantity=%s, price=%s' % (order_id, side, quantity, price))
     global stub, Q, P
     if stub is None:
         print("xud is not connected!")
@@ -312,26 +330,30 @@ def xud_place_order(order_id, side, quantity, price):
         print(response)
 
 
-def xud_execute_swap():
+def xud_execute_swap(order_id, peer_pub_key, quantity):
+    print('[XUD]ExecuteSwap: order_id=%s, peer_pub_key=%s, quantity=%s' % (order_id, peer_pub_key, quantity))
     global stub
-    request = xudrpc_pb2.ExecuteSwapRequest(pair_id='LTC/BTC', order_id='', peer_pub_key='', quantity='')
+    request = xudrpc_pb2.ExecuteSwapRequest(pair_id='%s/%s' % (Q, P), order_id=order_id, peer_pub_key=peer_pub_key, quantity=quantity)
     response = stub.ExecuteSwap(request)
     print(response)
 
 
 def subscribe_added_orders(stub):
     try:
-        request = xudrpc_pb2.SubscribeAddedOrdersRequest()
+        print('[XUD]SubscribeAddedOrders')
+        request = xudrpc_pb2.SubscribeAddedOrdersRequest(existing=True)
         for response in stub.SubscribeAddedOrders(request):
             print("------------ADDED------------")
             print(response)
-            place_xud_order(response.quantity, response.price, response.id, 'sell' if response.side == 'SELL' else 'buy', response.peer_pub_key, response.created_at)
+            if not response.is_own_order:
+                place_xud_order(str(response.quantity), str(response.price), response.id, 'sell' if response.side == xudrpc_pb2.SELL else 'buy', response.peer_pub_key, response.created_at)
     except:
         traceback.print_exc()
 
 
 def subscribe_removed_orders(stub):
     try:
+        print('[XUD]SubscribeRemovedOrders')
         request = xudrpc_pb2.SubscribeRemovedOrdersRequest()
         for response in stub.SubscribeRemovedOrders(request):
             print("-----------REMOVED-----------")
@@ -343,6 +365,7 @@ def subscribe_removed_orders(stub):
 
 def subscribe_swaps(stub):
     try:
+        print('[XUD]SubscribeSwaps')
         request = xudrpc_pb2.SubscribeRemovedOrdersRequest()
         for response in stub.SubscribeSwaps(request):
             print("------------SWAPS------------")
@@ -370,7 +393,7 @@ def run_subscribe_swaps(host, port):
 
 
 def handle_connect(cmd):
-    global stub
+    global stub, channel
 
     parts = cmd.split()
     host = parts[1] if len(parts) > 1 else 'localhost'
@@ -384,7 +407,7 @@ def handle_connect(cmd):
     stub = xudrpc_pb2_grpc.XudStub(channel)
     xud_get_info()
     # xud_list_pairs()
-    xud_get_orders()
+    # xud_get_orders()
 
 
 def handle_deposit(cmd):
