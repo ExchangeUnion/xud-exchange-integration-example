@@ -45,10 +45,11 @@ python -m grpc_tools.protoc -I ./xud/proto --python_out=. ./xud/proto/google/api
 python -m grpc_tools.protoc -I ./xud/proto --python_out=. ./xud/proto/google/protobuf/descriptor.proto
 ```
 
-Run this example
+Run this example. Notice you need to put xud `tls.cert` into this example directory.
 
 ```bash
 python engine.py
 ```
 
 You can type `help` for more helps in the running example.
+

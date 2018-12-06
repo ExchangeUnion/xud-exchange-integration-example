@@ -506,7 +506,7 @@ def run():
             print_help()
         else:
             print('Bad command: ' + cmd)
-            print('Type `help` for some help')
+            print('Type `help` for some helps')
 
 
 if __name__ == '__main__':
